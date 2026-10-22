@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Videos Creados</title>
+<style>
+:root{--bg:#0f0f16;--card:#1a1a26;--fg:#f3f3f7;--mut:#9a9ab0;--acc:#8b5cf6;--amb:#ffb020}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
+main{max-width:40rem;margin:0 auto;padding:2rem 1rem 4rem}
+h1{display:flex;align-items:center;gap:.6rem;font-size:1.6rem;margin:0 0 .25rem}
+h1 b{background:var(--fg);color:var(--bg);padding:.05rem .45rem;border-radius:.4rem;box-shadow:-3px -2px 0 var(--amb),3px 2px 0 var(--acc)}
+.sub{color:var(--mut);margin:0 0 1.5rem}
+.card{background:var(--card);border-radius:.8rem;padding:1.1rem 1.2rem;margin-bottom:1rem}
+.card h2{font-size:1rem;margin:0 0 .7rem;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+button{font:inherit;font-weight:600;border:0;border-radius:.6rem;padding:.65rem 1.1rem;background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--mut);border:1px solid #33334a}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+.me img{width:48px;height:48px;border-radius:50%}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;align-items:center;gap:.7rem;padding:.55rem .3rem;border-bottom:1px solid #26263a}
+li:last-child{border:0}
+li label{flex:1;cursor:pointer;word-break:break-all}
+li small{color:var(--mut);white-space:nowrap}
+.msg{margin-top:.8rem;color:var(--mut)}
+.msg.ok{color:#5ee0a0}.msg.err{color:#ff7a8a}
+.hide{display:none}
+footer{margin-top:2rem;color:var(--mut);font-size:.85rem}
+footer a{color:var(--mut)}
+</style>
+</head>
+<body>
+<main>
+  <h1><b>K4</b> Videos Creados</h1>
+  <p class="sub">Create short videos and send them to your own TikTok account as drafts.</p>
+
+  <section class="card" id="connect">
+    <h2>1 · TikTok account</h2>
+    <div id="loggedOut" class="hide">
+      <p style="margin-top:0">Log in with TikTok to let this app read your display name and upload videos to your drafts.</p>
+      <button id="login">Log in with TikTok</button>
+    </div>
+    <div id="loggedIn" class="hide">
+      <div class="row me"><img id="avatar" alt=""><div><strong id="name"></strong><div class="msg" style="margin:0">Connected</div></div><button class="ghost" id="logout" style="margin-left:auto">Disconnect</button></div>
+    </div>
+    <div class="msg err hide" id="offline">The local Videos Creados server is not running. Start it with <code>node app/server.js</code> and reload this page.</div>
+  </section>
+
+  <section class="card hide" id="videosCard">
+    <h2>2 · Choose a video</h2>
+    <ul id="videos"></ul>
+    <p class="msg hide" id="noVideos">No videos yet. Generate one with the GitHub Actions workflow.</p>
+  </section>
+
+  <section class="card hide" id="sendCard">
+    <h2>3 · Upload to TikTok drafts</h2>
+    <p style="margin-top:0">The video is uploaded to your TikTok inbox as a draft. You then open TikTok to edit it, add the caption and publish it yourself. Nothing is published by this app.</p>
+    <button id="send" disabled>Upload as draft</button>
+    <div class="msg" id="sendMsg"></div>
+  </section>
+
+  <footer>
+    <a href="/terms.html">Terms of Service</a> · <a href="/privacy.html">Privacy Policy</a>
+  </footer>
+</main>
+<script>
+var API = 'http://localhost:8787/api';
+var $ = function (id) { return document.getElementById(id); };
+var selected = null;
+
+function api(path, opts) {
+  return fetch(API + path, opts).then(function (r) {
+    return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
+  });
+}
+function show(id, on) { $(id).classList.toggle('hide', !on); }
+function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+
+function loadVideos() {
+  return api('/videos').then(function (d) {
+    var ul = $('videos'); ul.innerHTML = '';
+    d.videos.forEach(function (v) {
+      var li = document.createElement('li');
+      var inp = document.createElement('input'); inp.type = 'radio'; inp.name = 'v'; inp.id = v.id; inp.value = v.id;
+      inp.onchange = function () { selected = v.id; $('send').disabled = false; };
+      var lb = document.createElement('label'); lb.htmlFor = v.id; lb.textContent = v.name;
+      var sm = document.createElement('small'); sm.textContent = (v.origin === 'nube' ? 'cloud' : 'this computer') + ' · ' + mb(v.size);
+      li.appendChild(inp); li.appendChild(lb); li.appendChild(sm); ul.appendChild(li);
+    });
+    show('noVideos', d.videos.length === 0);
+  });
+}
+
+function pollStatus(publishId, tries) {
+  api('/publish-status?publish_id=' + encodeURIComponent(publishId)).then(function (s) {
+    var m = $('sendMsg');
+    if (s.status === 'SEND_TO_USER_INBOX' || s.status === 'PUBLISH_COMPLETE') { m.className = 'msg ok'; m.textContent = 'Done. Open TikTok and check your inbox: the draft is waiting for you to edit and publish it.'; $('send').disabled = false; }
+    else if (s.status === 'FAILED') { m.className = 'msg err'; m.textContent = 'TikTok could not process the video' + (s.fail_reason ? ': ' + s.fail_reason : '.'); $('send').disabled = false; }
+    else if (tries > 0) { m.textContent = 'TikTok is processing the upload (' + s.status.toLowerCase().replace(/_/g, ' ') + ')…'; setTimeout(function () { pollStatus(publishId, tries - 1); }, 4000); }
+    else { m.textContent = 'No confirmation yet. Check the TikTok app in a moment.'; $('send').disabled = false; }
+  }).catch(function (e) { $('sendMsg').className = 'msg err'; $('sendMsg').textContent = e.message; $('send').disabled = false; });
+}
+
+$('login').onclick = function () {
+  api('/auth-url').then(function (d) { location.href = d.url; }).catch(function (e) { alert(e.message); });
+};
+$('logout').onclick = function () { api('/logout', { method: 'POST' }).then(function () { location.reload(); }); };
+$('send').onclick = function () {
+  if (!selected) return;
+  $('send').disabled = true; $('sendMsg').className = 'msg'; $('sendMsg').textContent = 'Uploading to TikTok…';
+  api('/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: selected }) })
+    .then(function (d) { $('sendMsg').textContent = 'Upload sent. Waiting for TikTok…'; pollStatus(d.publish_id, 20); })
+    .catch(function (e) { $('sendMsg').className = 'msg err'; $('sendMsg').textContent = e.message; $('send').disabled = false; });
+};
+
+api('/status').then(function (s) {
+  if (!s.connected) { show('loggedOut', true); return; }
+  return api('/me').then(function (u) {
+    $('name').textContent = u.display_name || 'TikTok user';
+    if (u.avatar_url) $('avatar').src = u.avatar_url;
+    show('loggedIn', true); show('videosCard', true); show('sendCard', true);
+    return loadVideos();
+  });
+}).catch(function (e) {
+  if (/Failed to fetch|NetworkError|Load failed/i.test(e.message)) show('offline', true);
+  else { show('loggedOut', true); }
+});
+</script>
+</body>
+</html>
