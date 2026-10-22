@@ -1,30 +1,32 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Videos Creados - Autorización</title>
+<title>Videos Creados - Authorization</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#222}
-code{background:#f2f2f2;padding:.1rem .3rem;border-radius:4px;word-break:break-all}
 </style>
 </head>
 <body>
 <h1>Videos Creados</h1>
-<p id="msg">Procesando autorización de TikTok…</p>
-<p id="detail"></p>
-<p><a href="/">Volver al inicio</a></p>
+<p id="msg">Finishing your TikTok login…</p>
+<p><a href="/app.html">Back to the app</a></p>
 <script>
 var p = new URLSearchParams(location.search);
 var msg = document.getElementById('msg');
-var detail = document.getElementById('detail');
 if (p.get('error')) {
-  msg.textContent = 'La autorización fue cancelada o falló.';
-  detail.textContent = p.get('error_description') || p.get('error');
-} else if (p.get('code')) {
-  msg.textContent = 'Autorización recibida. Ya puedes cerrar esta ventana y volver a la aplicación.';
+  msg.textContent = 'Authorization was cancelled or failed: ' + (p.get('error_description') || p.get('error'));
+} else if (p.get('code') && p.get('state')) {
+  fetch('http://localhost:8787/api/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: p.get('code'), state: p.get('state') })
+  }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); }); })
+    .then(function () { msg.textContent = 'Connected. Redirecting…'; location.replace('/app.html'); })
+    .catch(function (e) { msg.textContent = 'Could not finish the login: ' + e.message + '. Make sure the local server is running (node app/server.js) and try again.'; });
 } else {
-  msg.textContent = 'Esta página recibe la respuesta de inicio de sesión de TikTok.';
+  msg.textContent = 'This page receives the login response from TikTok.';
 }
 </script>
 </body>
